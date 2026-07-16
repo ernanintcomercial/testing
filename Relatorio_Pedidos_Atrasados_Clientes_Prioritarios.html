@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acompanhamento de Pedidos Atrasados — Clientes Prioritários</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#12161d;
+  --surface:#1b212b;
+  --surface-2:#212836;
+  --border:#2b3442;
+  --text:#e9ecf1;
+  --text-dim:#8d96a6;
+  --text-faint:#5c6577;
+  --amber-lo:#d9a441;
+  --amber-mid:#e08a3c;
+  --red-hi:#e5484d;
+  --green-ok:#3fb97e;
+  --accent:#5fb0d9;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',sans-serif;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 24px 80px;}
+
+/* ---------- Header ---------- */
+header.top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  flex-wrap:wrap;
+  gap:20px;
+  padding-bottom:28px;
+  margin-bottom:28px;
+  border-bottom:1px solid var(--border);
+}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  color:var(--amber-mid);
+  margin:0 0 8px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.eyebrow .dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--red-hi);
+  box-shadow:0 0 0 3px rgba(229,72,77,0.18);
+  animation:pulse 2.2s infinite;
+}
+@keyframes pulse{
+  0%,100%{opacity:1;}
+  50%{opacity:0.35;}
+}
+h1{
+  font-family:'Space Grotesk',sans-serif;
+  font-weight:700;
+  font-size:28px;
+  line-height:1.15;
+  margin:0;
+  letter-spacing:-0.01em;
+}
+h1 span{color:var(--text-dim);font-weight:400;}
+.updated{
+  font-family:var(--mono);
+  font-size:12px;
+  color:var(--text-faint);
+  text-align:right;
+}
+.updated b{color:var(--text-dim);font-weight:600;}
+
+/* ---------- Status / loading ---------- */
+#status{
+  padding:18px 20px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:var(--surface);
+  color:var(--text-dim);
+  font-family:var(--mono);
+  font-size:13px;
+  margin-bottom:24px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+#status.error{border-color:rgba(229,72,77,0.5);color:#f4a6a8;}
+#status.hidden{display:none;}
+.spinner{
+  width:14px;height:14px;border-radius:50%;
+  border:2px solid var(--border);
+  border-top-color:var(--amber-mid);
+  animation:spin 0.8s linear infinite;
+  flex:none;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ---------- KPI cards ---------- */
+.kpis{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1px;
+  background:var(--border);
+  border:1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+  margin-bottom:32px;
+}
+.kpi{
+  background:var(--surface);
+  padding:18px 20px;
+}
+.kpi .label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.08em;
+  color:var(--text-faint);
+  margin-bottom:8px;
+}
+.kpi .value{
+  font-family:var(--mono);
+  font-size:24px;
+  font-weight:600;
+  color:var(--text);
+}
+.kpi.critical .value{color:var(--red-hi);}
+.kpi .sub{font-size:11px;color:var(--text-faint);margin-top:4px;}
+
+/* ---------- Region summary table ---------- */
+.region-summary{
+  margin-bottom:28px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+}
+.region-summary table{width:100%;border-collapse:collapse;font-size:13px;}
+.region-summary th{
+  text-align:left;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.06em;
+  color:var(--text-faint);
+  padding:12px 16px;
+  background:var(--surface-2);
+  border-bottom:1px solid var(--border);
+}
+.region-summary td{
+  padding:12px 16px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  font-family:var(--mono);
+}
+.region-summary tr:last-child td{border-bottom:none;}
+.region-summary td.name{font-family:'Inter',sans-serif;font-weight:600;}
+.region-summary td.dias{color:var(--red-hi);}
+
+/* ---------- Controls ---------- */
+.controls{
+  display:flex;
+  gap:10px;
+  margin-bottom:18px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.search{
+  flex:1;
+  min-width:220px;
+  position:relative;
+}
+.search input{
+  width:100%;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 14px;
+  color:var(--text);
+  font-family:'Inter',sans-serif;
+  font-size:13px;
+  outline:none;
+}
+.search input:focus{border-color:var(--accent);}
+.btn{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 14px;
+  color:var(--text-dim);
+  font-family:var(--mono);
+  font-size:12px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.btn:hover{color:var(--text);border-color:var(--accent);}
+
+/* ---------- Tree ---------- */
+.tree{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.node{border-bottom:1px solid var(--border);}
+.node:last-child{border-bottom:none;}
+.node-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 16px;
+  cursor:pointer;
+  background:var(--surface);
+  user-select:none;
+}
+.node-row:hover{background:var(--surface-2);}
+.node[data-level="regiao"] > .node-row{background:var(--surface-2);font-weight:700;font-size:15px;}
+.node[data-level="representante"] > .node-row{padding-left:32px;font-weight:600;}
+.node[data-level="cliente"] > .node-row{padding-left:48px;}
+.node[data-level="contrato"] > .node-row{padding-left:64px;color:var(--text-dim);}
+.node[data-level="pedido"] > .node-row{padding-left:80px;font-family:var(--mono);font-size:12.5px;}
+.caret{
+  width:9px;height:9px;
+  border-right:2px solid var(--text-faint);
+  border-bottom:2px solid var(--text-faint);
+  transform:rotate(-45deg);
+  transition:transform .15s;
+  flex:none;
+}
+.node.open > .node-row > .caret{transform:rotate(45deg);}
+.node-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.node-stats{
+  display:flex;
+  gap:16px;
+  font-family:var(--mono);
+  font-size:12px;
+  color:var(--text-dim);
+  flex:none;
+}
+.node-stats .valor{color:var(--text);font-weight:600;}
+.node-stats .dias{color:var(--red-hi);}
+.node-stats .dias.mid{color:var(--amber-mid);}
+.node-children{display:none;}
+.node.open > .node-children{display:block;}
+
+/* itens list (leaf) */
+.itens-list{padding:8px 16px 14px 100px;background:var(--bg);}
+.item-row{
+  display:flex;
+  gap:14px;
+  font-family:var(--mono);
+  font-size:12px;
+  color:var(--text-dim);
+  padding:4px 0;
+  border-bottom:1px dashed var(--border);
+}
+.item-row:last-child{border-bottom:none;}
+.item-row .prod{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}
+.item-row .qtd{width:70px;text-align:right;}
+.item-row .valor{width:100px;text-align:right;}
+.item-row .dias{width:70px;text-align:right;color:var(--red-hi);}
+
+.empty{padding:40px;text-align:center;color:var(--text-faint);font-family:var(--mono);font-size:13px;}
+
+footer.note{
+  margin-top:24px;
+  font-size:11.5px;
+  color:var(--text-faint);
+  line-height:1.6;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="eyebrow"><span class="dot"></span>Acompanhamento diário</p>
+      <h1>Pedidos Atrasados <span>— Clientes Prioritários</span></h1>
+    </div>
+    <div class="updated" id="updatedAt">carregando dados…</div>
+  </header>
+
+  <div id="status"><span class="spinner"></span> Lendo dados.xlsx, INDEX.xlsx e Clientes_Prioritarios.xlsx…</div>
+
+  <div id="content" style="display:none;">
+
+    <div class="kpis">
+      <div class="kpi">
+        <div class="label">Pedidos em aberto (R$)</div>
+        <div class="value" id="kpiValor">—</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Qtd. de pedidos</div>
+        <div class="value" id="kpiQtd">—</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Clientes prioritários afetados</div>
+        <div class="value" id="kpiClientes">—</div>
+      </div>
+      <div class="kpi critical">
+        <div class="label">Pedido mais crítico</div>
+        <div class="value" id="kpiDiasMax">—</div>
+        <div class="sub">dias em aberto</div>
+      </div>
+    </div>
+
+    <div class="region-summary">
+      <table>
+        <thead>
+          <tr>
+            <th>Região</th>
+            <th>Pedido de Compra em Aberto (R$)</th>
+            <th>Pedido de Compra em Aberto (qtd.)</th>
+            <th>Dias em aberto (máx.)</th>
+          </tr>
+        </thead>
+        <tbody id="regionSummaryBody"></tbody>
+      </table>
+    </div>
+
+    <div class="controls">
+      <div class="search">
+        <input type="text" id="searchInput" placeholder="Buscar por representante, cliente ou nº de pedido…">
+      </div>
+      <button class="btn" id="expandAllBtn">Expandir tudo</button>
+      <button class="btn" id="collapseAllBtn">Recolher tudo</button>
+    </div>
+
+    <div class="tree" id="tree"></div>
+
+  </div>
+
+  <footer class="note">
+    Base: extração bruta de pedidos em aberto lida diretamente de <b>dados.xlsx</b> (linhas de total/filtros do exportador removidas automaticamente). Considerados apenas clientes marcados como prioritários (cruzamento pela coluna Grupo com <b>Clientes_Prioritarios.xlsx</b>), com atraso igual ou superior a 25 dias após a Data de Implantação, e apenas pedidos com quantidade em aberto. Representante exibido conforme cadastro na base bruta (coluna Representante); região obtida por cruzamento do código do representante com <b>INDEX.xlsx</b>. Representantes não encontrados no INDEX são agrupados em "Sem região / não mapeado". Este relatório é recalculado no navegador a cada carregamento da página, a partir dos arquivos .xlsx presentes nesta mesma pasta do repositório.
+  </footer>
+
+</div>
+
+<script>
+const DIAS_MIN = 25;
+const REGION_ORDER = ['SUDESTE', 'SUL E CENTRO OESTE', 'NORTE E NORDESTE'];
+const REGION_LABELS = {
+  'SUDESTE': 'SUDESTE',
+  'SUL CENTRO OESTE': 'SUL E CENTRO OESTE',
+  'NORTE NORDESTE': 'NORTE E NORDESTE'
+};
+const REGION_FALLBACK = 'SEM REGIÃO / NÃO MAPEADO';
+
+function fmtBRL(n){
+  return (n||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0});
+}
+function fmtInt(n){
+  return (n||0).toLocaleString('pt-BR');
+}
+function leadingCode(str){
+  if(str === null || str === undefined) return null;
+  const m = String(str).trim().match(/^(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+function normalizeRegion(raw){
+  if(!raw) return null;
+  const norm = String(raw).trim().replace(/\s+/g, ' ');
+  return REGION_LABELS[norm] || norm;
+}
+function toUTCDay(d){
+  if(!(d instanceof Date) || isNaN(d)) return null;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+// A base de dados exporta datas como número serial do Excel SEM formatação de célula
+// (o arquivo não guarda referências de célula nem estilo de data), então o SheetJS não
+// consegue detectar essas colunas como datas automaticamente. Convertemos manualmente
+// a partir do serial (época do Excel: 30/12/1899, já compensando o bug do ano bissexto de 1900).
+function excelSerialToDate(value){
+  if(value === null || value === undefined || value === '') return null;
+  if(value instanceof Date) return isNaN(value) ? null : value;
+  const n = typeof value === 'number' ? value : parseFloat(value);
+  if(isNaN(n)) return null;
+  const days = Math.floor(n);
+  return new Date(Date.UTC(1899, 11, 30) + days * 86400000);
+}
+function fmtDate(d){
+  if(!(d instanceof Date) || isNaN(d)) return '';
+  return d.toLocaleDateString('pt-BR', {timeZone:'UTC'});
+}
+
+async function fetchWorkbook(path){
+  const res = await fetch(path, {cache:'no-store'});
+  if(!res.ok) throw new Error('Não foi possível carregar "' + path + '" (HTTP ' + res.status + '). Confirme se o arquivo está na mesma pasta do HTML no repositório.');
+  const buf = await res.arrayBuffer();
+  return XLSX.read(buf, {type:'array', cellDates:true});
+}
+
+function sheetRows(wb, sheetName){
+  const name = sheetName || wb.SheetNames[0];
+  const ws = wb.Sheets[name];
+  // raw:true é essencial aqui — com raw:false o SheetJS tenta formatar os valores usando o
+  // estilo da célula, e nesta base isso corrompe números (ex: vira "118275.0%" em vez de 1182.75)
+  // porque o arquivo não tem referências de célula/estilo confiáveis.
+  return XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+}
+
+async function build(){
+  const statusEl = document.getElementById('status');
+  try{
+    const [wbDados, wbIndex, wbClientes] = await Promise.all([
+      fetchWorkbook('./dados.xlsx'),
+      fetchWorkbook('./INDEX.xlsx'),
+      fetchWorkbook('./Clientes_Prioritarios.xlsx')
+    ]);
+
+    // --- INDEX: código do representante -> região ---
+    const idxRows = sheetRows(wbIndex);
+    const repRegionMap = new Map();
+    for(let i = 1; i < idxRows.length; i++){
+      const row = idxRows[i];
+      if(!row || row[0] === null) continue;
+      const codigo = parseInt(row[0], 10);
+      if(isNaN(codigo)) continue;
+      repRegionMap.set(codigo, normalizeRegion(row[3]));
+    }
+
+    // --- Clientes Prioritários: códigos (coluna Cod) ---
+    const cliRows = sheetRows(wbClientes);
+    const prioritySet = new Set();
+    for(let i = 1; i < cliRows.length; i++){
+      const row = cliRows[i];
+      if(!row || row[1] === null) continue;
+      const cod = parseInt(row[1], 10);
+      if(!isNaN(cod)) prioritySet.add(cod);
+    }
+
+    // --- Dados brutos ---
+    const raw = sheetRows(wbDados, 'Export') || sheetRows(wbDados);
+    const now = new Date();
+    const hojeUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Estrutura aninhada: regiao -> representante -> cliente -> contrato -> pedido -> itens[]
+    const regions = new Map();
+
+    let maxDiasGlobal = 0;
+    let lastEmissao = null;
+
+    for(let i = 1; i < raw.length; i++){
+      const row = raw[i];
+      if(!row) continue;
+      const nrPedido = row[4];
+      const dtImplantRaw = row[1];
+      if(nrPedido === null || nrPedido === '' || isNaN(parseInt(nrPedido,10))) continue; // pula Total / Filtros / vazias
+      const dtImplant = excelSerialToDate(dtImplantRaw);
+      if(!(dtImplant instanceof Date) || isNaN(dtImplant)) continue;
+
+      const dtImplantUTC = toUTCDay(dtImplant);
+      const diasAberto = Math.round((hojeUTC - dtImplantUTC) / 86400000);
+      if(diasAberto < DIAS_MIN) continue;
+
+      const qtdAberta = parseFloat(row[29]) || 0;
+      if(qtdAberta <= 0) continue;
+
+      const grupoCode = leadingCode(row[25]); // coluna Z - Grupo
+      if(grupoCode === null || !prioritySet.has(grupoCode)) continue;
+
+      const dtEmissao = excelSerialToDate(row[0]);
+      if(dtEmissao instanceof Date && !isNaN(dtEmissao) && (!lastEmissao || dtEmissao > lastEmissao)) lastEmissao = dtEmissao;
+
+      const repCode = leadingCode(row[21]); // coluna V - Representante
+      const repLabel = row[21] !== null ? String(row[21]).trim() : '(sem representante)';
+      const regionLabel = (repCode !== null && repRegionMap.has(repCode)) ? repRegionMap.get(repCode) : REGION_FALLBACK;
+
+      const clienteLabel = row[17] !== null ? String(row[17]).trim() : '(sem cliente)';
+      const contratoLabel = row[23] !== null ? String(row[23]).trim() : '(sem contrato)';
+      const pedidoLabel = row[5] !== null ? String(row[5]).trim() : '(sem nº de pedido)';
+      const produtoLabel = row[22] !== null ? String(row[22]).trim() : '(sem produto)';
+      const precoLiquido = parseFloat(row[33]) || 0;
+      const valorItem = qtdAberta * precoLiquido;
+      const nrPedidoInterno = row[4];
+
+      if(diasAberto > maxDiasGlobal) maxDiasGlobal = diasAberto;
+
+      if(!regions.has(regionLabel)) regions.set(regionLabel, new Map());
+      const reps = regions.get(regionLabel);
+      if(!reps.has(repLabel)) reps.set(repLabel, new Map());
+      const clientes = reps.get(repLabel);
+      if(!clientes.has(clienteLabel)) clientes.set(clienteLabel, new Map());
+      const contratos = clientes.get(clienteLabel);
+      if(!contratos.has(contratoLabel)) contratos.set(contratoLabel, new Map());
+      const pedidos = contratos.get(contratoLabel);
+      if(!pedidos.has(pedidoLabel)) pedidos.set(pedidoLabel, []);
+      pedidos.get(pedidoLabel).push({
+        produto: produtoLabel,
+        qtd: qtdAberta,
+        valor: valorItem,
+        dias: diasAberto,
+        nrPedidoInterno: nrPedidoInterno,
+        dtImplant: dtImplant
+      });
+    }
+
+    if(regions.size === 0){
+      statusEl.className = 'error';
+      statusEl.innerHTML = 'Nenhum pedido encontrado com atraso ≥ ' + DIAS_MIN + ' dias para clientes prioritários. Verifique se dados.xlsx foi atualizado corretamente.';
+      return;
+    }
+
+    // --- Monta árvore final com agregações ---
+    function buildPedidoNode(label, itens){
+      const valor = itens.reduce((s,it) => s + it.valor, 0);
+      const diasMax = Math.max(...itens.map(it => it.dias));
+      return {label, level:'pedido', children:null, valor, diasMax, qtdPedidos:1, itens};
+    }
+    function buildLevel(map, level, childBuilder){
+      const nodes = [];
+      for(const [label, childMap] of map){
+        const children = childBuilder(childMap);
+        const valor = children.reduce((s,c) => s + c.valor, 0);
+        const diasMax = Math.max(...children.map(c => c.diasMax));
+        const qtdPedidos = children.reduce((s,c) => s + c.qtdPedidos, 0);
+        nodes.push({label, level, children, valor, diasMax, qtdPedidos});
+      }
+      nodes.sort((a,b) => b.valor - a.valor);
+      return nodes;
+    }
+
+    const regionNodes = [];
+    for(const [regionLabel, reps] of regions){
+      const repNodes = buildLevel(reps, 'representante', clientes =>
+        buildLevel(clientes, 'cliente', contratos =>
+          buildLevel(contratos, 'contrato', pedidos => {
+            const arr = [];
+            for(const [pLabel, itens] of pedidos) arr.push(buildPedidoNode(pLabel, itens));
+            arr.sort((a,b) => b.valor - a.valor);
+            return arr;
+          })
+        )
+      );
+      const valor = repNodes.reduce((s,c) => s + c.valor, 0);
+      const diasMax = Math.max(...repNodes.map(c => c.diasMax));
+      const qtdPedidos = repNodes.reduce((s,c) => s + c.qtdPedidos, 0);
+      regionNodes.push({label:regionLabel, level:'regiao', children:repNodes, valor, diasMax, qtdPedidos});
+    }
+    regionNodes.sort((a,b) => {
+      const ia = REGION_ORDER.indexOf(a.label);
+      const ib = REGION_ORDER.indexOf(b.label);
+      if(ia === -1 && ib === -1) return b.valor - a.valor;
+      if(ia === -1) return 1;
+      if(ib === -1) return -1;
+      return ia - ib;
+    });
+
+    // --- KPIs globais ---
+    const totalValor = regionNodes.reduce((s,r) => s + r.valor, 0);
+    const totalQtd = regionNodes.reduce((s,r) => s + r.qtdPedidos, 0);
+    const clientesUnicos = new Set();
+    for(const reps of regions.values())
+      for(const clientes of reps.values())
+        for(const clienteLabel of clientes.keys())
+          clientesUnicos.add(clienteLabel);
+
+    document.getElementById('kpiValor').textContent = fmtBRL(totalValor);
+    document.getElementById('kpiQtd').textContent = fmtInt(totalQtd);
+    document.getElementById('kpiClientes').textContent = fmtInt(clientesUnicos.size);
+    document.getElementById('kpiDiasMax').textContent = fmtInt(maxDiasGlobal);
+    document.getElementById('updatedAt').innerHTML = 'Atualizado em: <b>' + now.toLocaleString('pt-BR') + '</b>' + (lastEmissao ? '<br>Pedido mais recente na base: ' + fmtDate(lastEmissao) : '');
+
+    // --- Tabela resumo por região ---
+    const tbody = document.getElementById('regionSummaryBody');
+    regionNodes.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td class="name">' + r.label + '</td>' +
+        '<td>' + fmtBRL(r.valor) + '</td>' +
+        '<td>' + fmtInt(r.qtdPedidos) + '</td>' +
+        '<td class="dias">' + fmtInt(r.diasMax) + '</td>';
+      tbody.appendChild(tr);
+    });
+
+    // --- Renderiza árvore ---
+    const treeEl = document.getElementById('tree');
+    treeEl.innerHTML = '';
+    regionNodes.forEach(node => treeEl.appendChild(renderNode(node)));
+
+    document.getElementById('status').classList.add('hidden');
+    document.getElementById('content').style.display = 'block';
+
+    setupControls();
+
+  }catch(err){
+    console.error(err);
+    statusEl.className = 'error';
+    statusEl.textContent = 'Erro ao carregar o dashboard: ' + err.message;
+  }
+}
+
+function diasClass(d){
+  if(d >= 60) return 'dias';
+  if(d >= 40) return 'dias mid';
+  return 'dias';
+}
+
+function renderNode(node){
+  const el = document.createElement('div');
+  el.className = 'node';
+  el.dataset.level = node.level;
+  el.dataset.label = node.label.toLowerCase();
+
+  const row = document.createElement('div');
+  row.className = 'node-row';
+
+  const hasChildren = node.level !== 'pedido';
+  row.innerHTML =
+    (hasChildren ? '<div class="caret"></div>' : '<div style="width:9px;flex:none;"></div>') +
+    '<div class="node-label">' + escapeHtml(node.label) + '</div>' +
+    '<div class="node-stats">' +
+      (node.level !== 'pedido' ? '<span>' + fmtInt(node.qtdPedidos) + ' ped.</span>' : '') +
+      '<span class="valor">' + fmtBRL(node.valor) + '</span>' +
+      '<span class="' + diasClass(node.diasMax) + '">' + fmtInt(node.diasMax) + ' dias</span>' +
+    '</div>';
+
+  el.appendChild(row);
+
+  const childrenWrap = document.createElement('div');
+  childrenWrap.className = 'node-children';
+
+  if(node.level === 'pedido'){
+    const list = document.createElement('div');
+    list.className = 'itens-list';
+    node.itens.forEach(it => {
+      const ir = document.createElement('div');
+      ir.className = 'item-row';
+      ir.innerHTML =
+        '<span class="prod">' + escapeHtml(it.produto) + '</span>' +
+        '<span class="qtd">' + fmtInt(it.qtd) + ' un</span>' +
+        '<span class="valor">' + fmtBRL(it.valor) + '</span>' +
+        '<span class="dias">' + fmtInt(it.dias) + 'd</span>';
+      list.appendChild(ir);
+    });
+    childrenWrap.appendChild(list);
+    row.addEventListener('click', () => el.classList.toggle('open'));
+  } else {
+    node.children.forEach(child => childrenWrap.appendChild(renderNode(child)));
+    row.addEventListener('click', () => el.classList.toggle('open'));
+  }
+
+  el.appendChild(childrenWrap);
+  return el;
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function setupControls(){
+  const searchInput = document.getElementById('searchInput');
+  const expandBtn = document.getElementById('expandAllBtn');
+  const collapseBtn = document.getElementById('collapseAllBtn');
+  const treeEl = document.getElementById('tree');
+
+  expandBtn.addEventListener('click', () => {
+    treeEl.querySelectorAll('.node').forEach(n => n.classList.add('open'));
+  });
+  collapseBtn.addEventListener('click', () => {
+    treeEl.querySelectorAll('.node').forEach(n => n.classList.remove('open'));
+  });
+
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    const allNodes = treeEl.querySelectorAll('.node');
+    if(!q){
+      allNodes.forEach(n => { n.style.display = ''; n.classList.remove('open'); });
+      return;
+    }
+    allNodes.forEach(n => { n.style.display = 'none'; });
+    allNodes.forEach(n => {
+      if(n.dataset.label && n.dataset.label.includes(q)){
+        n.style.display = '';
+        n.classList.add('open');
+        let p = n.parentElement.closest('.node');
+        while(p){
+          p.style.display = '';
+          p.classList.add('open');
+          p = p.parentElement.closest('.node');
+        }
+        n.querySelectorAll('.node').forEach(c => c.style.display = '');
+      }
+    });
+  });
+}
+
+build();
+</script>
+</body>
+</html>
