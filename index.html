@@ -338,7 +338,7 @@ footer.note{
   </div>
 
   <footer class="note">
-    Base: extração bruta de pedidos em aberto lida diretamente de <b>dados.xlsx</b> (linhas de total/filtros do exportador removidas automaticamente). Considerados apenas clientes marcados como prioritários (cruzamento pela coluna Grupo com <b>Clientes_Prioritarios.xlsx</b>), com atraso igual ou superior a 25 dias após a Data de Implantação, e apenas pedidos com quantidade em aberto. Representante exibido conforme cadastro na base bruta (coluna Representante); região obtida por cruzamento do código do representante com <b>INDEX.xlsx</b>. Representantes não encontrados no INDEX são agrupados em "Sem região / não mapeado". Este relatório é recalculado no navegador a cada carregamento da página, a partir dos arquivos .xlsx presentes nesta mesma pasta do repositório.
+    Base: extração bruta de pedidos em aberto lida diretamente de <b>dados.xlsx</b> (linhas de total/filtros do exportador removidas automaticamente). Considerados apenas clientes marcados como prioritários (cruzamento pela coluna Grupo com <b>Clientes_Prioritarios.xlsx</b>), com atraso igual ou superior a 25 dias após a Data de Implantação, e apenas pedidos com quantidade em aberto. Representante exibido conforme cadastro na base bruta (coluna Representante); região obtida por cruzamento do código do representante com <b>INDEX.xlsx</b>. Representantes que não estão no INDEX (por venderem para todas as regiões) têm sua região definida pelo Estado (Unidade Federativa) de cada pedido; só caem em "Sem região / não mapeado" se o Estado também não puder ser identificado. Este relatório é recalculado no navegador a cada carregamento da página, a partir dos arquivos .xlsx presentes nesta mesma pasta do repositório.
   </footer>
 
 </div>
@@ -352,6 +352,25 @@ const REGION_LABELS = {
   'NORTE NORDESTE': 'NORTE E NORDESTE'
 };
 const REGION_FALLBACK = 'SEM REGIÃO / NÃO MAPEADO';
+// Representantes que vendem para todas as regiões (não cadastrados no INDEX.xlsx) têm sua
+// região determinada pelo Estado (Unidade Federativa) do pedido, e não pelo representante.
+const UF_TO_REGION = {
+  'ESPIRITO SANTO':'SUDESTE', 'MINAS GERAIS':'SUDESTE', 'RIO DE JANEIRO':'SUDESTE', 'SAO PAULO':'SUDESTE',
+  'PARANA':'SUL E CENTRO OESTE', 'RIO GRANDE DO SUL':'SUL E CENTRO OESTE', 'SANTA CATARINA':'SUL E CENTRO OESTE',
+  'DISTRITO FEDERAL':'SUL E CENTRO OESTE', 'GOIAS':'SUL E CENTRO OESTE', 'MATO GROSSO':'SUL E CENTRO OESTE', 'MATO GROSSO DO SUL':'SUL E CENTRO OESTE',
+  'ACRE':'NORTE E NORDESTE', 'AMAPA':'NORTE E NORDESTE', 'AMAZONAS':'NORTE E NORDESTE', 'PARA':'NORTE E NORDESTE',
+  'RONDONIA':'NORTE E NORDESTE', 'RORAIMA':'NORTE E NORDESTE', 'TOCANTINS':'NORTE E NORDESTE', 'TOCANTIS':'NORTE E NORDESTE',
+  'ALAGOAS':'NORTE E NORDESTE', 'BAHIA':'NORTE E NORDESTE', 'CEARA':'NORTE E NORDESTE', 'MARANHAO':'NORTE E NORDESTE',
+  'PARAIBA':'NORTE E NORDESTE', 'PERNAMBUCO':'NORTE E NORDESTE', 'PIAUI':'NORTE E NORDESTE', 'RIO GRANDE DO NORTE':'NORTE E NORDESTE', 'SERGIPE':'NORTE E NORDESTE'
+};
+function normalizeUF(raw){
+  if(!raw) return null;
+  return String(raw).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+}
+function regionFromUF(raw){
+  const norm = normalizeUF(raw);
+  return norm ? (UF_TO_REGION[norm] || null) : null;
+}
 
 function fmtBRL(n){
   return (n||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0});
@@ -471,7 +490,15 @@ async function build(){
 
       const repCode = leadingCode(row[21]); // coluna V - Representante
       const repLabel = row[21] !== null ? String(row[21]).trim() : '(sem representante)';
-      const regionLabel = (repCode !== null && repRegionMap.has(repCode)) ? repRegionMap.get(repCode) : REGION_FALLBACK;
+      // Representante mapeado no INDEX -> usa a região dele (representante fixo de uma região).
+      // Representante não encontrado no INDEX -> vende para todas as regiões, então a região
+      // é definida pelo Estado (Unidade Federativa, coluna T) do próprio pedido.
+      let regionLabel;
+      if(repCode !== null && repRegionMap.has(repCode)){
+        regionLabel = repRegionMap.get(repCode);
+      } else {
+        regionLabel = regionFromUF(row[19]) || REGION_FALLBACK;
+      }
 
       const clienteLabel = row[17] !== null ? String(row[17]).trim() : '(sem cliente)';
       const contratoLabel = row[23] !== null ? String(row[23]).trim() : '(sem contrato)';
