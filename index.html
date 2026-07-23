@@ -268,6 +268,48 @@ h1 span{color:var(--text-dim);font-weight:400;}
 
 .empty{padding:40px;text-align:center;color:var(--text-faint);font-family:var(--mono);font-size:13px;}
 
+/* ---------- Painel de evolução (histórico) ---------- */
+.evo-toggle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 4px;
+  margin:-8px 0 20px;
+  color:var(--text-faint);
+  font-family:var(--mono);
+  font-size:12px;
+  cursor:pointer;
+  user-select:none;
+  width:fit-content;
+}
+.evo-toggle:hover{color:var(--accent);}
+.evo-toggle .caret{width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s;flex:none;}
+.evo-toggle.open .caret{transform:rotate(45deg);}
+.evo-panel{display:none;margin:-10px 0 24px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);}
+.evo-panel.open{display:block;}
+.evo-panel table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.evo-panel th{
+  text-align:right;
+  font-size:10.5px;
+  text-transform:uppercase;
+  letter-spacing:0.05em;
+  color:var(--text-faint);
+  padding:10px 14px;
+  background:var(--surface-2);
+  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.evo-panel th:first-child{text-align:left;}
+.evo-panel td{padding:10px 14px;text-align:right;border-bottom:1px solid var(--border);font-family:var(--mono);white-space:nowrap;}
+.evo-panel tr:last-child td{border-bottom:none;}
+.evo-panel td:first-child{text-align:left;font-family:'Inter',sans-serif;font-weight:600;color:var(--text);}
+.evo-panel .regiao-titulo td{background:var(--surface-2);font-weight:700;color:var(--text-dim);font-family:'Inter',sans-serif;padding-top:12px;}
+.evo-delta{font-size:11px;margin-left:6px;}
+.evo-delta.pior{color:var(--red-hi);}
+.evo-delta.melhor{color:var(--green-ok);}
+.evo-delta.igual{color:var(--text-faint);}
+.evo-sem-dado{color:var(--text-faint);font-style:italic;font-size:11.5px;}
+
 footer.note{
   margin-top:24px;
   font-size:11.5px;
@@ -311,6 +353,9 @@ footer.note{
       </div>
     </div>
 
+    <div class="evo-toggle" id="evoToggleGeral"><div class="caret"></div>Ver evolução (D-1 · 7 dias · 30 dias)</div>
+    <div class="evo-panel" id="evoPanelGeral"></div>
+
     <div class="region-summary">
       <table>
         <thead>
@@ -324,6 +369,10 @@ footer.note{
         <tbody id="regionSummaryBody"></tbody>
       </table>
     </div>
+
+    <div class="evo-toggle" id="evoToggleRegiao"><div class="caret"></div>Ver evolução por região (D-1 · 7 dias · 30 dias)</div>
+    <div class="evo-panel" id="evoPanelRegiao"></div>
+
 
     <div class="controls">
       <div class="search">
@@ -595,6 +644,12 @@ async function build(){
     document.getElementById('kpiDiasMax').textContent = fmtInt(maxDiasGlobal);
     document.getElementById('updatedAt').innerHTML = 'Atualizado em: <b>' + now.toLocaleString('pt-BR') + '</b>' + (lastEmissao ? '<br>Pedido mais recente na base: ' + fmtDate(lastEmissao) : '');
 
+    // --- Evolução histórica (D-1 / 7 dias / 30 dias) ---
+    carregarEvolucao({
+      kpis: { valor: totalValor, qtd: totalQtd, clientes: clientesUnicos.size, diasMax: maxDiasGlobal },
+      regioes: regionNodes.map(r => ({ label: r.label, valor: r.valor, qtd: r.qtdPedidos, diasMax: r.diasMax })),
+    });
+
     // --- Tabela resumo por região ---
     const tbody = document.getElementById('regionSummaryBody');
     regionNodes.forEach(r => {
@@ -719,6 +774,131 @@ function setupControls(){
     });
   });
 }
+
+// ---------- Evolução histórica (D-1 / 7 dias / 30 dias) ----------
+
+const EVO_PONTOS = [
+  { chave: 'd1', offsetDias: 1, label: 'D-1' },
+  { chave: 'd7', offsetDias: 7, label: '7 dias' },
+  { chave: 'd30', offsetDias: 30, label: '30 dias' },
+];
+const EVO_TOLERANCIA_DIAS = 2; // aceita o snapshot mais próximo, útil se faltou subir arquivo num fim de semana
+
+function addDiasISO(dataISO, dias){
+  const d = new Date(dataISO + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0,10);
+}
+function diffDiasISO(a, b){
+  const da = new Date(a + 'T00:00:00Z');
+  const db = new Date(b + 'T00:00:00Z');
+  return Math.round((da - db) / 86400000);
+}
+
+function encontrarSnapshotProximo(historico, dataAlvoISO, toleranciaDias){
+  let melhor = null;
+  let melhorDist = Infinity;
+  for(const h of historico){
+    const dist = Math.abs(diffDiasISO(h.data, dataAlvoISO));
+    if(dist <= toleranciaDias && dist < melhorDist){
+      melhor = h;
+      melhorDist = dist;
+    }
+  }
+  return melhor;
+}
+
+// Pra este relatório, MENOS é sempre melhor (menos R$ parado, menos pedidos
+// atrasados, menos dias de atraso máximo) — então valor maior que o comparado
+// é "pior" (vermelho) e valor menor é "melhor" (verde).
+function formatarDelta(hoje, comparado, formatador){
+  if(comparado === null || comparado === undefined) return '<span class="evo-sem-dado">sem dado</span>';
+  const delta = hoje - comparado;
+  if(Math.abs(delta) < 0.005) return formatador(comparado) + '<span class="evo-delta igual"> (=)</span>';
+  const classe = delta > 0 ? 'pior' : 'melhor';
+  const sinal = delta > 0 ? '+' : '−';
+  return formatador(comparado) + '<span class="evo-delta ' + classe + '">' + sinal + formatador(Math.abs(delta), true) + '</span>';
+}
+
+function fmtBRLDelta(n, semSimbolo){ return (semSimbolo ? '' : '') + (n||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0}); }
+function fmtIntDelta(n){ return (n||0).toLocaleString('pt-BR'); }
+
+function linhaComCampoAninhado(label, hojeVal, historico, dataHojeISO, extrator, formatador){
+  const celulas = EVO_PONTOS.map(p => {
+    const dataAlvo = addDiasISO(dataHojeISO, -p.offsetDias);
+    const snap = encontrarSnapshotProximo(historico, dataAlvo, EVO_TOLERANCIA_DIAS);
+    const valorComparado = snap ? extrator(snap) : null;
+    return '<td>' + formatarDelta(hojeVal, valorComparado, formatador) + '</td>';
+  }).join('');
+  return '<tr><td>' + label + '</td><td>' + formatador(hojeVal) + '</td>' + celulas + '</tr>';
+}
+
+async function carregarEvolucao(hojeResumo){
+  const panelGeral = document.getElementById('evoPanelGeral');
+  const panelRegiao = document.getElementById('evoPanelRegiao');
+
+  let historico = [];
+  try{
+    const res = await fetch('./historico.json', {cache:'no-store'});
+    if(res.ok) historico = await res.json();
+  }catch(e){
+    console.warn('Não foi possível carregar historico.json:', e);
+  }
+
+  if(!Array.isArray(historico)) historico = [];
+
+  const dataHojeISO = new Date().toISOString().slice(0,10);
+  const cabecalho = '<tr><th>Métrica</th><th>Hoje</th>' + EVO_PONTOS.map(p => '<th>' + p.label + '</th>').join('') + '</tr>';
+
+  if(historico.length === 0){
+    const aviso = '<div style="padding:16px;color:var(--text-faint);font-family:var(--mono);font-size:12px;">Ainda não há histórico suficiente — o comparativo aparece a partir do próximo dia em que os dados forem atualizados.</div>';
+    panelGeral.innerHTML = aviso;
+    panelRegiao.innerHTML = aviso;
+    return;
+  }
+
+  // ---- Painel geral (KPIs) ----
+  panelGeral.innerHTML = '<table>' + cabecalho +
+    linhaComCampoAninhado('Pedidos em aberto (R$)', hojeResumo.kpis.valor, historico, dataHojeISO, h => h.kpis.valor, fmtBRLDelta) +
+    linhaComCampoAninhado('Qtd. de pedidos', hojeResumo.kpis.qtd, historico, dataHojeISO, h => h.kpis.qtd, fmtIntDelta) +
+    linhaComCampoAninhado('Clientes prioritários afetados', hojeResumo.kpis.clientes, historico, dataHojeISO, h => h.kpis.clientes, fmtIntDelta) +
+    linhaComCampoAninhado('Pedido mais crítico (dias)', hojeResumo.kpis.diasMax, historico, dataHojeISO, h => h.kpis.diasMax, fmtIntDelta) +
+    '</table>';
+
+  // ---- Painel por região ----
+  let corpoRegiao = '';
+  hojeResumo.regioes.forEach(r => {
+    corpoRegiao += '<tr class="regiao-titulo"><td colspan="' + (2+EVO_PONTOS.length) + '">' + r.label + '</td></tr>';
+    corpoRegiao += linhaComCampoAninhado('Pedido de Compra em Aberto (R$)', r.valor, historico, dataHojeISO,
+      h => { const rh = (h.regioes||[]).find(x => x.label === r.label); return rh ? rh.valor : null; }, fmtBRLDelta);
+    corpoRegiao += linhaComCampoAninhado('Pedido de Compra em Aberto (qtd.)', r.qtd, historico, dataHojeISO,
+      h => { const rh = (h.regioes||[]).find(x => x.label === r.label); return rh ? rh.qtd : null; }, fmtIntDelta);
+    corpoRegiao += linhaComCampoAninhado('Dias em aberto (máx.)', r.diasMax, historico, dataHojeISO,
+      h => { const rh = (h.regioes||[]).find(x => x.label === r.label); return rh ? rh.diasMax : null; }, fmtIntDelta);
+  });
+  panelRegiao.innerHTML = '<table>' + cabecalho + corpoRegiao + '</table>';
+}
+
+// Versão que recebe uma função extratora (pra poder buscar tanto em h.kpis.X quanto em
+// h.regioes[].X sem duplicar a lógica de busca de snapshot).
+function linhaComCampoAninhado(label, hojeVal, historico, dataHojeISO, extrator, formatador){
+  const celulas = EVO_PONTOS.map(p => {
+    const dataAlvo = addDiasISO(dataHojeISO, -p.offsetDias);
+    const snap = encontrarSnapshotProximo(historico, dataAlvo, EVO_TOLERANCIA_DIAS);
+    const valorComparado = snap ? extrator(snap) : null;
+    return '<td>' + formatarDelta(hojeVal, valorComparado, formatador) + '</td>';
+  }).join('');
+  return '<tr><td>' + label + '</td><td>' + formatador(hojeVal) + '</td>' + celulas + '</tr>';
+}
+
+document.getElementById('evoToggleGeral').addEventListener('click', () => {
+  document.getElementById('evoToggleGeral').classList.toggle('open');
+  document.getElementById('evoPanelGeral').classList.toggle('open');
+});
+document.getElementById('evoToggleRegiao').addEventListener('click', () => {
+  document.getElementById('evoToggleRegiao').classList.toggle('open');
+  document.getElementById('evoPanelRegiao').classList.toggle('open');
+});
 
 build();
 </script>

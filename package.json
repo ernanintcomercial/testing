@@ -1,0 +1,12 @@
+{
+  "name": "historico-pedidos-atrasados",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gera um snapshot diário (histórico) dos KPIs do painel de Pedidos Atrasados",
+  "scripts": {
+    "gerar": "node gerar-historico.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
