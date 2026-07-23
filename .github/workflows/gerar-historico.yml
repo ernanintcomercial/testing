@@ -1,0 +1,47 @@
+name: Atualizar histórico
+
+# Dispara sozinho toda vez que dados.xlsx, INDEX.xlsx ou Clientes_Prioritarios.xlsx
+# forem atualizados. Como aqui é tudo um repositório só (diferente do projeto
+# de Vendas), não precisa de token especial — o próprio GITHUB_TOKEN padrão
+# já tem permissão de escrever neste mesmo repositório.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dados.xlsx"
+      - "INDEX.xlsx"
+      - "Clientes_Prioritarios.xlsx"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  gerar-historico:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Gerar snapshot de hoje
+        run: node gerar-historico.js
+
+      - name: Publicar (commit + push)
+        run: |
+          git config user.name "bot-historico-pedidos"
+          git config user.email "bot-historico-pedidos@users.noreply.github.com"
+          git add historico.json
+          if git diff --cached --quiet; then
+            echo "Nada mudou no histórico — não precisa publicar de novo."
+          else
+            git commit -m "Atualiza histórico de pedidos atrasados"
+            git push
+          fi
