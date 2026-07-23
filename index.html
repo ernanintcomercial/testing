@@ -892,7 +892,16 @@ async function carregarEvolucao(hojeResumo){
   const dataHojeISO = new Date().toISOString().slice(0,10);
   const cabecalho = '<tr><th>Métrica</th><th>Hoje</th>' + EVO_PONTOS.map(p => '<th>' + p.label + '</th>').join('') + '</tr>';
 
-  if(historico.length === 0){
+  // Nunca comparar "hoje" com o snapshot do próprio dia de hoje: se o histórico
+  // só tem a entrada de hoje (ex.: dia em que a Action rodou pela primeira vez vez,
+  // ou dia em que a Action rodou de novo por outro motivo), a tolerância de
+  // EVO_TOLERANCIA_DIAS abaixo poderia "casar" o snapshot de hoje com o alvo de
+  // D-1 (ou de 7/30 dias, se faltarem dias no meio), fazendo o comparativo parecer
+  // "igual a hoje" sem ser real. Removendo a entrada de hoje da lista de
+  // candidatos, garantimos que só dias efetivamente passados entram na comparação.
+  const historicoParaComparar = historico.filter(h => h.data !== dataHojeISO);
+
+  if(historicoParaComparar.length === 0){
     const aviso = '<div style="padding:16px;color:var(--text-faint);font-family:var(--mono);font-size:12px;">Ainda não há histórico suficiente — o comparativo aparece a partir do próximo dia em que os dados forem atualizados.</div>';
     panelGeral.innerHTML = aviso;
     panelRegiao.innerHTML = aviso;
@@ -901,21 +910,21 @@ async function carregarEvolucao(hojeResumo){
 
   // ---- Painel geral (KPIs) ----
   panelGeral.innerHTML = '<table>' + cabecalho +
-    linhaComCampoAninhado('Pedidos em aberto (R$)', hojeResumo.kpis.valor, historico, dataHojeISO, h => h.kpis.valor, fmtBRLDelta) +
-    linhaComCampoAninhado('Qtd. de pedidos', hojeResumo.kpis.qtd, historico, dataHojeISO, h => h.kpis.qtd, fmtIntDelta) +
-    linhaComCampoAninhado('Clientes prioritários afetados', hojeResumo.kpis.clientes, historico, dataHojeISO, h => h.kpis.clientes, fmtIntDelta) +
-    linhaComCampoAninhado('Pedido mais crítico (dias)', hojeResumo.kpis.diasMax, historico, dataHojeISO, h => h.kpis.diasMax, fmtIntDelta) +
+    linhaComCampoAninhado('Pedidos em aberto (R$)', hojeResumo.kpis.valor, historicoParaComparar, dataHojeISO, h => h.kpis.valor, fmtBRLDelta) +
+    linhaComCampoAninhado('Qtd. de pedidos', hojeResumo.kpis.qtd, historicoParaComparar, dataHojeISO, h => h.kpis.qtd, fmtIntDelta) +
+    linhaComCampoAninhado('Clientes prioritários afetados', hojeResumo.kpis.clientes, historicoParaComparar, dataHojeISO, h => h.kpis.clientes, fmtIntDelta) +
+    linhaComCampoAninhado('Pedido mais crítico (dias)', hojeResumo.kpis.diasMax, historicoParaComparar, dataHojeISO, h => h.kpis.diasMax, fmtIntDelta) +
     '</table>';
 
   // ---- Painel por região ----
   let corpoRegiao = '';
   hojeResumo.regioes.forEach(r => {
     corpoRegiao += '<tr class="regiao-titulo"><td colspan="' + (2+EVO_PONTOS.length) + '">' + r.label + '</td></tr>';
-    corpoRegiao += linhaComCampoAninhado('Pedido de Compra em Aberto (R$)', r.valor, historico, dataHojeISO,
+    corpoRegiao += linhaComCampoAninhado('Pedido de Compra em Aberto (R$)', r.valor, historicoParaComparar, dataHojeISO,
       h => { const rh = (h.regioes||[]).find(x => x.label === r.label); return rh ? rh.valor : null; }, fmtBRLDelta);
-    corpoRegiao += linhaComCampoAninhado('Pedido de Compra em Aberto (qtd.)', r.qtd, historico, dataHojeISO,
+    corpoRegiao += linhaComCampoAninhado('Pedido de Compra em Aberto (qtd.)', r.qtd, historicoParaComparar, dataHojeISO,
       h => { const rh = (h.regioes||[]).find(x => x.label === r.label); return rh ? rh.qtd : null; }, fmtIntDelta);
-    corpoRegiao += linhaComCampoAninhado('Dias em aberto (máx.)', r.diasMax, historico, dataHojeISO,
+    corpoRegiao += linhaComCampoAninhado('Dias em aberto (máx.)', r.diasMax, historicoParaComparar, dataHojeISO,
       h => { const rh = (h.regioes||[]).find(x => x.label === r.label); return rh ? rh.diasMax : null; }, fmtIntDelta);
   });
   panelRegiao.innerHTML = '<table>' + cabecalho + corpoRegiao + '</table>';
