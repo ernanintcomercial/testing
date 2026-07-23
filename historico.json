@@ -1,0 +1,32 @@
+[
+  {
+    "data": "2026-07-23",
+    "geradoEm": "23/07/2026, 10:14:37",
+    "kpis": {
+      "valor": 622824.13,
+      "qtd": 422,
+      "clientes": 65,
+      "diasMax": 276
+    },
+    "regioes": [
+      {
+        "label": "SUDESTE",
+        "valor": 325823.54,
+        "qtd": 180,
+        "diasMax": 276
+      },
+      {
+        "label": "SUL E CENTRO OESTE",
+        "valor": 204426.69,
+        "qtd": 194,
+        "diasMax": 189
+      },
+      {
+        "label": "NORTE E NORDESTE",
+        "valor": 92573.9,
+        "qtd": 48,
+        "diasMax": 237
+      }
+    ]
+  }
+]
