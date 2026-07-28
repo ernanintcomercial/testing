@@ -58,5 +58,65 @@
         "diasMax": 238
       }
     ]
+  },
+  {
+    "data": "2026-07-27",
+    "geradoEm": "28/07/2026, 12:46:43 (backfill via Extracao27-7-26.xlsx)",
+    "kpis": {
+      "valor": 2502938.09,
+      "qtd": 564,
+      "clientes": 113,
+      "diasMax": 280
+    },
+    "regioes": [
+      {
+        "label": "SUDESTE",
+        "valor": 1586594.9,
+        "qtd": 259,
+        "diasMax": 280
+      },
+      {
+        "label": "SUL E CENTRO OESTE",
+        "valor": 819728.64,
+        "qtd": 254,
+        "diasMax": 193
+      },
+      {
+        "label": "NORTE E NORDESTE",
+        "valor": 96614.55,
+        "qtd": 51,
+        "diasMax": 241
+      }
+    ]
+  },
+  {
+    "data": "2026-07-28",
+    "geradoEm": "28/07/2026, 12:46:43",
+    "kpis": {
+      "valor": 2469063.68,
+      "qtd": 561,
+      "clientes": 113,
+      "diasMax": 281
+    },
+    "regioes": [
+      {
+        "label": "SUDESTE",
+        "valor": 1555863.5,
+        "qtd": 254,
+        "diasMax": 281
+      },
+      {
+        "label": "SUL E CENTRO OESTE",
+        "valor": 817003.17,
+        "qtd": 256,
+        "diasMax": 194
+      },
+      {
+        "label": "NORTE E NORDESTE",
+        "valor": 96197.02,
+        "qtd": 51,
+        "diasMax": 242
+      }
+    ]
   }
 ]
