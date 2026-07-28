@@ -6,6 +6,13 @@
 // afetados, Dias em aberto máx. — no total e por região) e acrescenta um
 // snapshot do dia dentro de historico.json.
 //
+// BACKFILL DE DIAS ESQUECIDOS: se algum arquivo "ExtracaoDD-M-AA.xlsx"
+// (ex.: Extracao27-7-26.xlsx) aparecer na raiz do repo, ele é tratado como
+// a extração daquele dia específico — o atraso é recalculado usando a data
+// do nome do arquivo como referência (não a data real de hoje), o snapshot
+// é inserido no lugar certo do histórico, e o arquivo é apagado depois de
+// processado.
+//
 // IMPORTANTE: a lógica de filtro/agrupamento aqui precisa ficar igual à do
 // index.html. Se um dia mudar uma regra lá (ex.: DIAS_MIN), replique aqui
 // também, senão o histórico e o "hoje" da tela passam a divergir.
@@ -33,6 +40,9 @@ const UF_TO_REGION = {
 
 const HISTORICO_ARQUIVO = 'historico.json';
 const HISTORICO_MAX_DIAS = 400; // ~13 meses de retenção, evita crescer pra sempre
+
+// Extracao27-7-26.xlsx / Extracao7-3-2026.xlsx etc. (dia-mês-ano, ano com 2 ou 4 dígitos)
+const BACKFILL_REGEX = /^Extracao(\d{1,2})-(\d{1,2})-(\d{2,4})\.xlsx$/i;
 
 function normalizeUF(raw) {
     if (!raw) return null;
@@ -71,39 +81,18 @@ function sheetRows(wb, sheetName) {
     return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
 }
 
-function main() {
-    const wbDados = XLSX.readFile('dados.xlsx');
-    const wbIndex = XLSX.readFile('INDEX.xlsx');
-    const wbClientes = XLSX.readFile('Clientes_Prioritarios.xlsx');
-
-    const idxRows = sheetRows(wbIndex);
-    const repRegionMap = new Map();
-    for (let i = 1; i < idxRows.length; i++) {
-        const row = idxRows[i];
-        if (!row || row[0] === null) continue;
-        const codigo = parseInt(row[0], 10);
-        if (isNaN(codigo)) continue;
-        repRegionMap.set(codigo, normalizeRegion(row[3]));
-    }
-
-    const cliRows = sheetRows(wbClientes);
-    const prioritySet = new Set();
-    for (let i = 1; i < cliRows.length; i++) {
-        const row = cliRows[i];
-        if (!row || row[1] === null) continue;
-        const cod = parseInt(row[1], 10);
-        if (!isNaN(cod)) prioritySet.add(cod);
-    }
-
+// Calcula os KPIs (total + por região) de UM arquivo de dados, usando
+// refUTC (Date.UTC de um dia) como "hoje" para o cálculo de dias em atraso.
+// repRegionMap e prioritySet vêm de INDEX.xlsx / Clientes_Prioritarios.xlsx
+// (esses dois são tratados como "atuais", não têm versão por dia).
+function computeKpis(wbDados, repRegionMap, prioritySet, refUTC) {
     const raw = sheetRows(wbDados, 'Export') || sheetRows(wbDados);
-    const now = new Date();
-    const hojeUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
     let totalValor = 0;
     let maxDiasGlobal = 0;
     const clientesUnicos = new Set();
-    const pedidosUnicos = new Set(); // chave composta pra contar "qtd de pedidos" igual à árvore do site
-    const porRegiao = new Map(); // label -> { valor, pedidosSet, diasMax }
+    const pedidosUnicos = new Set();
+    const porRegiao = new Map();
 
     for (let i = 1; i < raw.length; i++) {
         const row = raw[i];
@@ -115,7 +104,7 @@ function main() {
         if (!(dtImplant instanceof Date) || isNaN(dtImplant)) continue;
 
         const dtImplantUTC = toUTCDay(dtImplant);
-        const diasAberto = Math.round((hojeUTC - dtImplantUTC) / 86400000);
+        const diasAberto = Math.round((refUTC - dtImplantUTC) / 86400000);
         if (diasAberto < DIAS_MIN) continue;
 
         const qtdAberta = parseFloat(row[29]) || 0;
@@ -158,9 +147,7 @@ function main() {
         ...[...porRegiao.keys()].filter(l => !REGION_ORDER.includes(l)),
     ];
 
-    const snapshot = {
-        data: new Date().toISOString().slice(0, 10), // AAAA-MM-DD (UTC, data do dia em que a Action rodou)
-        geradoEm: now.toLocaleString('pt-BR'),
+    return {
         kpis: {
             valor: Math.round(totalValor * 100) / 100,
             qtd: pedidosUnicos.size,
@@ -177,6 +164,36 @@ function main() {
             };
         }),
     };
+}
+
+function upsertHistorico(historico, snapshot) {
+    const idx = historico.findIndex(h => h.data === snapshot.data);
+    if (idx >= 0) historico[idx] = snapshot;
+    else historico.push(snapshot);
+}
+
+function main() {
+    const wbIndex = XLSX.readFile('INDEX.xlsx');
+    const wbClientes = XLSX.readFile('Clientes_Prioritarios.xlsx');
+
+    const idxRows = sheetRows(wbIndex);
+    const repRegionMap = new Map();
+    for (let i = 1; i < idxRows.length; i++) {
+        const row = idxRows[i];
+        if (!row || row[0] === null) continue;
+        const codigo = parseInt(row[0], 10);
+        if (isNaN(codigo)) continue;
+        repRegionMap.set(codigo, normalizeRegion(row[3]));
+    }
+
+    const cliRows = sheetRows(wbClientes);
+    const prioritySet = new Set();
+    for (let i = 1; i < cliRows.length; i++) {
+        const row = cliRows[i];
+        if (!row || row[1] === null) continue;
+        const cod = parseInt(row[1], 10);
+        if (!isNaN(cod)) prioritySet.add(cod);
+    }
 
     let historico = [];
     if (fs.existsSync(HISTORICO_ARQUIVO)) {
@@ -188,17 +205,57 @@ function main() {
         }
     }
 
-    // Se já rodou hoje (ex.: reprocessamento), substitui a entrada de hoje em vez de duplicar.
-    historico = historico.filter(h => h.data !== snapshot.data);
-    historico.push(snapshot);
+    const now = new Date();
+
+    // 1) Snapshot de hoje (fluxo normal, sempre roda) -----------------------
+    if (fs.existsSync('dados.xlsx')) {
+        const wbDadosHoje = XLSX.readFile('dados.xlsx');
+        const hojeUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        const resultado = computeKpis(wbDadosHoje, repRegionMap, prioritySet, hojeUTC);
+        const snapshotHoje = {
+            data: new Date().toISOString().slice(0, 10), // AAAA-MM-DD (UTC, data do dia em que a Action rodou)
+            geradoEm: now.toLocaleString('pt-BR'),
+            ...resultado,
+        };
+        upsertHistorico(historico, snapshotHoje);
+        console.log(`✅ Snapshot de hoje (${snapshotHoje.data}): valor=${snapshotHoje.kpis.valor} qtd=${snapshotHoje.kpis.qtd} clientes=${snapshotHoje.kpis.clientes} diasMax=${snapshotHoje.kpis.diasMax}`);
+    } else {
+        console.log('⚠️  dados.xlsx não encontrado — pulando snapshot de hoje.');
+    }
+
+    // 2) Backfill de dias esquecidos (ExtracaoDD-M-AA.xlsx) ------------------
+    const arquivosBackfill = fs.readdirSync('.').filter(f => BACKFILL_REGEX.test(f));
+    for (const arquivo of arquivosBackfill) {
+        const m = arquivo.match(BACKFILL_REGEX);
+        const dia = parseInt(m[1], 10);
+        const mes = parseInt(m[2], 10);
+        let ano = parseInt(m[3], 10);
+        if (ano < 100) ano += 2000;
+
+        const refUTC = Date.UTC(ano, mes - 1, dia);
+        const dataStr = new Date(refUTC).toISOString().slice(0, 10);
+
+        const wbBackfill = XLSX.readFile(arquivo);
+        const resultado = computeKpis(wbBackfill, repRegionMap, prioritySet, refUTC);
+        const snapshotBackfill = {
+            data: dataStr,
+            geradoEm: `${now.toLocaleString('pt-BR')} (backfill via ${arquivo})`,
+            ...resultado,
+        };
+        upsertHistorico(historico, snapshotBackfill);
+
+        fs.unlinkSync(arquivo); // já processado, remove pra não reprocessar e não sujar o repo
+        console.log(`↩️  Backfill de ${dataStr} gerado a partir de ${arquivo} (arquivo removido): valor=${snapshotBackfill.kpis.valor} qtd=${snapshotBackfill.kpis.qtd}`);
+    }
+
+    // 3) Salva histórico consolidado -----------------------------------------
     historico.sort((a, b) => a.data.localeCompare(b.data));
     if (historico.length > HISTORICO_MAX_DIAS) {
         historico = historico.slice(historico.length - HISTORICO_MAX_DIAS);
     }
 
     fs.writeFileSync(HISTORICO_ARQUIVO, JSON.stringify(historico, null, 2), 'utf-8');
-    console.log(`✅ Snapshot de ${snapshot.data} salvo. Histórico agora tem ${historico.length} dia(s).`);
-    console.log(`   KPIs de hoje: valor=${snapshot.kpis.valor} qtd=${snapshot.kpis.qtd} clientes=${snapshot.kpis.clientes} diasMax=${snapshot.kpis.diasMax}`);
+    console.log(`📦 Histórico agora tem ${historico.length} dia(s).`);
 }
 
 main();
