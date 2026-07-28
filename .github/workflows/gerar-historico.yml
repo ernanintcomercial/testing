@@ -1,9 +1,11 @@
 name: Atualizar histórico
 
-# Dispara sozinho toda vez que dados.xlsx, INDEX.xlsx ou Clientes_Prioritarios.xlsx
-# forem atualizados. Como aqui é tudo um repositório só (diferente do projeto
-# de Vendas), não precisa de token especial — o próprio GITHUB_TOKEN padrão
-# já tem permissão de escrever neste mesmo repositório.
+# Dispara sozinho toda vez que dados.xlsx, INDEX.xlsx, Clientes_Prioritarios.xlsx
+# forem atualizados, OU quando um arquivo de backfill "ExtracaoDD-M-AA.xlsx"
+# (ex.: Extracao27-7-26.xlsx) for enviado — usado pra recuperar um dia que
+# esqueceram de subir. Como aqui é tudo um repositório só (diferente do
+# projeto de Vendas), não precisa de token especial — o próprio GITHUB_TOKEN
+# padrão já tem permissão de escrever neste mesmo repositório.
 on:
   push:
     branches: [main]
@@ -11,6 +13,7 @@ on:
       - "dados.xlsx"
       - "INDEX.xlsx"
       - "Clientes_Prioritarios.xlsx"
+      - "Extracao*.xlsx"
   workflow_dispatch: {}
 
 permissions:
@@ -31,16 +34,16 @@ jobs:
       - name: Instalar dependências
         run: npm install
 
-      - name: Gerar snapshot de hoje
+      - name: Gerar snapshot de hoje (+ backfill se houver Extracao*.xlsx)
         run: node gerar-historico.js
 
       - name: Publicar (commit + push)
         run: |
           git config user.name "bot-historico-pedidos"
           git config user.email "bot-historico-pedidos@users.noreply.github.com"
-          git add historico.json
+          git add -A
           if git diff --cached --quiet; then
-            echo "Nada mudou no histórico — não precisa publicar de novo."
+            echo "Nada mudou — não precisa publicar de novo."
           else
             git commit -m "Atualiza histórico de pedidos atrasados"
             git push
