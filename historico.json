@@ -118,5 +118,35 @@
         "diasMax": 242
       }
     ]
+  },
+  {
+    "data": "2026-07-29",
+    "geradoEm": "29/07/2026, 10:33:40",
+    "kpis": {
+      "valor": 2435162.75,
+      "qtd": 544,
+      "clientes": 113,
+      "diasMax": 282
+    },
+    "regioes": [
+      {
+        "label": "SUDESTE",
+        "valor": 1550141.38,
+        "qtd": 249,
+        "diasMax": 282
+      },
+      {
+        "label": "SUL E CENTRO OESTE",
+        "valor": 798466.46,
+        "qtd": 250,
+        "diasMax": 195
+      },
+      {
+        "label": "NORTE E NORDESTE",
+        "valor": 86554.9,
+        "qtd": 45,
+        "diasMax": 243
+      }
+    ]
   }
 ]
