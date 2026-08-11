@@ -270,6 +270,36 @@
     ]
   },
   {
+    "data": "2026-08-10",
+    "geradoEm": "11/08/2026, 08:46:24 (backfill via Extração em Tabela (71).xlsx)",
+    "kpis": {
+      "valor": 1689269.11,
+      "qtd": 382,
+      "clientes": 71,
+      "diasMax": 237
+    },
+    "regioes": [
+      {
+        "label": "SUDESTE",
+        "valor": 1220731.14,
+        "qtd": 151,
+        "diasMax": 236
+      },
+      {
+        "label": "SUL E CENTRO OESTE",
+        "valor": 422820.41,
+        "qtd": 204,
+        "diasMax": 207
+      },
+      {
+        "label": "NORTE E NORDESTE",
+        "valor": 45717.55,
+        "qtd": 27,
+        "diasMax": 237
+      }
+    ]
+  },
+  {
     "data": "2026-08-11",
     "geradoEm": "11/08/2026, 11:26:46",
     "kpis": {
